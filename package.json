@@ -1,0 +1,19 @@
+{
+  "name": "bsc-token-rescue",
+  "version": "1.0.0",
+  "description": "Rescue BEP-20 tokens from compromised BSC wallet with sweeper bot protection",
+  "main": "rescue.js",
+  "scripts": {
+    "send": "node transfer-aem.js",
+    "rescue": "node rescue.js",
+    "rescue:7702": "node revoke-and-rescue.js",
+    "check": "node check-balance.js",
+    "estimate": "node estimate-gas.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.13.0",
+    "viem": "^2.55.19"
+  }
+}
