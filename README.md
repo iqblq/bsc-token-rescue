@@ -38,7 +38,7 @@ A specialized Node.js tool designed to rescue BEP-20 tokens from compromised Bin
    FUNDING_PRIVATE_KEY=your_safe_wallet_private_key_here
    DESTINATION_ADDRESS=your_safe_destination_address_here
    TOKEN_CONTRACT=0x...
-   BSC_RPC=https://rpc.ankr.com/bsc
+   BSC_RPC=https://bsc-rpc.publicnode.com
    BLOXROUTE_RPC=https://bsc.rpc.blxrbdn.com
    RESCUE_STRATEGY=bloxroute
    ```
@@ -47,11 +47,17 @@ A specialized Node.js tool designed to rescue BEP-20 tokens from compromised Bin
 
 ## 🛠️ Usage
 
-- **Check Balances:**
+- **Interactive Web GUI Dashboard (Recommended):**
+  ```bash
+  npm run gui
+  ```
+  Buka browser di `http://localhost:3000` untuk monitoring wallet real-time, ping RPC, deteksi EIP-7702, dan eksekusi rescue visual.
+
+- **Check Balances (CLI):**
   ```bash
   npm run check
   ```
-- **Execute Rescue:**
+- **Execute Rescue (CLI):**
   ```bash
   npm run rescue
   ```

@@ -1,18 +1,42 @@
 /**
  * =====================================================================
- * EIP-7702 REVOCATION & RESCUE TOOL FOR BSC
+ * EIP-7702 ATOMIC RESCUE TOOL FOR BSC
+ * =====================================================================
+ * 
+ * Tool ini mengeksekusi penyelamatan token BEP-20 dari wallet yang terkena
+ * bajak / sweeper bot via EIP-7702 Delegation secara ATOMIK (1 Transaksi):
+ * 
+ * 1. Compromised Wallet menandatangani otorisasi EIP-7702 yang mendelegasikan
+ *    wallet ke Multicall3 (0xcA11bde05977b3631167028862bE2a173976CA11).
+ * 2. Sponsor Wallet mengirim Transaksi Type-4 (EIP-7702) ke Compromised Wallet
+ *    dengan payload `aggregate3` untuk mentransfer token ke Safe Destination.
+ * 3. Keunggulan:
+ *    - 100% ATOMIK: Selesai dalam 1 blok / 1 transaksi.
+ *    - 0 BNB di Compromised Wallet: Sweeper bot tidak bisa mencuri gas fee.
+ *    - Seluruh gas fee dibayar oleh Sponsor Wallet.
+ *    - Transaksi dikirim via Private Mempool (bloXroute Protect RPC).
  * =====================================================================
  */
 
-const { createWalletClient, createPublicClient, http, zeroAddress, encodeFunctionData, parseAbi } = require("viem");
+const {
+  createWalletClient,
+  createPublicClient,
+  http,
+  encodeFunctionData,
+  parseAbi,
+  formatEther,
+  formatUnits,
+} = require("viem");
 const { privateKeyToAccount } = require("viem/accounts");
 const { bsc } = require("viem/chains");
 require("dotenv").config();
 
-function formatPrivateKey(pk) {
-  if (!pk) return pk;
-  return pk.startsWith("0x") ? pk : `0x${pk}`;
-}
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+const MULTICALL3_ABI = parseAbi([
+  "struct Call3 { address target; bool allowFailure; bytes callData; }",
+  "function aggregate3(Call3[] calls) payable returns ((bool success, bytes returnData)[])",
+]);
 
 const ERC20_ABI = parseAbi([
   "function balanceOf(address) view returns (uint256)",
@@ -22,19 +46,46 @@ const ERC20_ABI = parseAbi([
   "function decimals() view returns (uint8)",
 ]);
 
+function formatPrivateKey(pk) {
+  if (!pk) return pk;
+  const clean = pk.trim();
+  return clean.startsWith("0x") ? clean : `0x${clean}`;
+}
+
+const FALLBACK_RPCS = [
+  process.env.BSC_RPC,
+  "https://bsc-dataseed.bnbchain.org",
+  "https://bsc-dataseed-public.bnbchain.org",
+  "https://binance.llamarpc.com",
+].filter(Boolean);
+
+async function getWorkingPublicClient() {
+  for (const url of FALLBACK_RPCS) {
+    try {
+      const client = createPublicClient({ chain: bsc, transport: http(url) });
+      await client.getBlockNumber();
+      return { client, url };
+    } catch {
+      // try next
+    }
+  }
+  throw new Error("Gagal terhubung ke RPC BSC publik manapun.");
+}
+
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║     🛡️ EIP-7702 DELEGATION REVOCATION & RESCUE 🛡️        ║");
+  console.log("║     🛡️ EIP-7702 ATOMIC TOKEN RESCUE FOR BSC 🛡️           ║");
+  console.log("║     Bypass Sweeper Bot via Single Atomic Transaction    ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   const compKey = formatPrivateKey(process.env.COMPROMISED_PRIVATE_KEY);
   const fundKey = formatPrivateKey(process.env.FUNDING_PRIVATE_KEY);
-  const destAddress = process.env.DESTINATION_ADDRESS;
-  const tokenAddress = process.env.TOKEN_CONTRACT || "0xa0a906bc6a38c8249e0d89f57f72ad12606b952e";
-  const rpcUrl = process.env.BSC_RPC || "https://bsc-rpc.publicnode.com";
+  const destAddress = (process.env.DESTINATION_ADDRESS || "").trim();
+  const tokenAddress = (process.env.TOKEN_CONTRACT || "0x8aab31fbc69c92fa53f600910cf0f215531f8239").trim();
+  const privateRpcUrl = process.env.BLOXROUTE_RPC || "https://bsc.rpc.blxrbdn.com";
 
-  if (!compKey || !fundKey || !destAddress) {
-    console.error("❌ Pastikan .env sudah diisi!");
+  if (!compKey || !fundKey || !destAddress || !tokenAddress) {
+    console.error("❌ Pastikan file .env sudah diisi lengkap!");
     process.exit(1);
   }
 
@@ -42,143 +93,196 @@ async function main() {
   const sponsorAccount = privateKeyToAccount(fundKey);
 
   console.log(`📍 Compromised Wallet: ${compromisedAccount.address}`);
-  console.log(`📍 Sponsor/Funding:    ${sponsorAccount.address}`);
-  console.log(`📍 Destination:        ${destAddress}\n`);
+  console.log(`📍 Sponsor Wallet:     ${sponsorAccount.address}`);
+  console.log(`📍 Destination Wallet: ${destAddress}`);
+  console.log(`🪙 Token Contract:     ${tokenAddress}\n`);
 
-  const publicClient = createPublicClient({
-    chain: bsc,
-    transport: http(rpcUrl),
-  });
+  const { client: publicClient, url: activeReadRpc } = await getWorkingPublicClient();
+  console.log(`🔗 Active BSC RPC:    ${activeReadRpc}`);
+  console.log(`🛡️ Private RPC:       ${privateRpcUrl}\n`);
 
-  const sponsorClient = createWalletClient({
-    account: sponsorAccount,
-    chain: bsc,
-    transport: http(rpcUrl),
-  });
-
-  const compromisedClient = createWalletClient({
-    account: compromisedAccount,
-    chain: bsc,
-    transport: http(rpcUrl),
-  });
-
-  // 1. Check current code on compromised wallet
+  // 1. Cek status kode & delegasi saat ini
   const currentCode = await publicClient.getCode({ address: compromisedAccount.address });
-  console.log(`🔍 Current Wallet Code: ${currentCode || "0x (Normal EOA)"}`);
-
   if (currentCode && currentCode.startsWith("0xef0100")) {
-    const maliciousContract = "0x" + currentCode.slice(8);
-    console.log(`🚨 TERDETEKSI MALICIOUS EIP-7702 DELEGATION!`);
-    console.log(`   Contract Hacker: ${maliciousContract}\n`);
-
-    console.log("⏳ STEP 1: REVOKING EIP-7702 DELEGATION...");
-    console.log("   (Gas dibayar oleh sponsor wallet, compromised wallet gak butuh BNB)");
-
-    let authorization;
-    if (typeof compromisedClient.signAuthorization === "function") {
-      authorization = await compromisedClient.signAuthorization({
-        contractAddress: zeroAddress,
-      });
-    } else if (typeof compromisedAccount.signAuthorization === "function") {
-      authorization = await compromisedAccount.signAuthorization({
-        contractAddress: zeroAddress,
-        chainId: 56,
-      });
-    } else if (typeof compromisedAccount.experimental_signAuthorization === "function") {
-      authorization = await compromisedAccount.experimental_signAuthorization({
-        contractAddress: zeroAddress,
-        chainId: 56,
-      });
-    } else {
-      throw new Error("signAuthorization method not available in this viem version");
-    }
-
-    console.log("   ✍️ Authorization signed successfully!");
-
-    // Sponsor sends Type 4 transaction to clear code on compromised wallet
-    const revokeTxHash = await sponsorClient.sendTransaction({
-      authorizationList: [authorization],
-      to: compromisedAccount.address,
-      value: 0n,
-    });
-
-    console.log(`   🚀 Revoke TX sent: ${revokeTxHash}`);
-    console.log("   ⏳ Menunggu konfirmasi di block BSC...");
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: revokeTxHash });
-    console.log(`   ✅ Revoke CONFIRMED di block ${receipt.blockNumber} (Status: ${receipt.status})!\n`);
-
-    // Verify code is now cleared
-    const updatedCode = await publicClient.getCode({ address: compromisedAccount.address });
-    console.log(`🔍 Updated Wallet Code: ${updatedCode || "0x (CLEAN! Normal EOA kembali!)"}\n`);
+    const activeContract = "0x" + currentCode.slice(8);
+    console.log(`🚨 STATUS: Terdeteksi EIP-7702 delegation aktif!`);
+    console.log(`   Contract saat ini: ${activeContract}\n`);
   } else {
-    console.log("ℹ️ Wallet tidak memiliki delegasi EIP-7702 atau sudah bersih.\n");
+    console.log(`ℹ️ STATUS: Normal EOA atau belum ada delegasi (${currentCode || "0x"})\n`);
   }
 
-  // STEP 2: RESCUE TOKEN
-  console.log("⏳ STEP 2: RESCUE TOKEN AEM...");
+  // 2. Cek saldo token yang akan diselamatkan
+  const [tokenBalance, decimals, symbol, name] = await Promise.all([
+    publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [compromisedAccount.address],
+    }),
+    publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "decimals",
+    }),
+    publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "symbol",
+    }),
+    publicClient.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "name",
+    }),
+  ]);
 
-  const tokenBalance = await publicClient.readContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: [compromisedAccount.address],
-  });
-
-  const decimals = await publicClient.readContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: "decimals",
-  });
-
-  const symbol = await publicClient.readContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: "symbol",
-  });
-
-  const formattedBalance = Number(tokenBalance) / 10 ** decimals;
-  console.log(`💎 Sisa Balance Token: ${formattedBalance} ${symbol}`);
+  const formattedBalance = formatUnits(tokenBalance, decimals);
+  console.log(`💎 Token Ditemukan: ${name} (${symbol})`);
+  console.log(`💰 Saldo Tersedia: ${formattedBalance} ${symbol}`);
 
   if (tokenBalance === 0n) {
-    console.log("⚠️ Token balance 0.");
+    console.log("\n⚠️ Saldo token 0. Tidak ada yang perlu di-rescue.");
     return;
   }
 
-  console.log("\n🚀 Mengirim BNB secukupnya untuk gas fee token transfer...");
-  const gasBnbNeeded = 300000000000000n; // 0.0003 BNB (~$0.20)
+  // 3. Cek saldo BNB sponsor
+  const sponsorBalance = await publicClient.getBalance({ address: sponsorAccount.address });
+  console.log(`⛽ Sponsor Balance: ${formatEther(sponsorBalance)} BNB\n`);
 
-  const fundHash = await sponsorClient.sendTransaction({
-    to: compromisedAccount.address,
-    value: gasBnbNeeded,
+  // 4. Siapkan calldata transfer token melalui Multicall3
+  console.log("⚙️  Menyiapkan Atomic EIP-7702 Rescue payload...");
+  const transferCalldata = encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: "transfer",
+    args: [destAddress, tokenBalance],
   });
-  console.log(`   ✅ Sent gas BNB: ${fundHash}`);
-  await publicClient.waitForTransactionReceipt({ hash: fundHash });
 
-  console.log("\n🚀 Mentransfer Token AEM ke wallet tujuan...");
-  const transferHash = await compromisedClient.sendTransaction({
-    to: tokenAddress,
-    data: encodeFunctionData({
-      abi: ERC20_ABI,
-      functionName: "transfer",
-      args: [destAddress, tokenBalance],
+  const multicallData = encodeFunctionData({
+    abi: MULTICALL3_ABI,
+    functionName: "aggregate3",
+    args: [
+      [
+        {
+          target: tokenAddress,
+          allowFailure: false,
+          callData: transferCalldata,
+        },
+      ],
+    ],
+  });
+
+  // 5. Buat dan tandatangani EIP-7702 Authorization ke Multicall3
+  const compNonce = await publicClient.getTransactionCount({
+    address: compromisedAccount.address,
+  });
+  console.log(`🔢 Compromised Nonce: ${compNonce}`);
+
+  const authorization = await compromisedAccount.signAuthorization({
+    contractAddress: MULTICALL3_ADDRESS,
+    chainId: 56,
+    nonce: compNonce,
+  });
+
+  console.log("✍️ EIP-7702 Authorization signed (Delegasi ke Multicall3)!");
+
+  // 6. Estimasi Gas & Fees untuk Transaksi Type-4
+  console.log("📊 Mengestimasi gas fee transaksi Type-4...");
+  const [estimatedGas, feeData] = await Promise.all([
+    publicClient.estimateGas({
+      account: sponsorAccount.address,
+      authorizationList: [authorization],
+      to: compromisedAccount.address,
+      data: multicallData,
+      value: 0n,
     }),
+    publicClient.estimateFeesPerGas(),
+  ]);
+
+  const gasLimit = (estimatedGas * 130n) / 100n;
+  const maxFeePerGas = feeData.maxFeePerGas
+    ? (feeData.maxFeePerGas * 150n) / 100n
+    : 100000000n;
+  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 50000000n;
+  const totalGasCost = gasLimit * maxFeePerGas;
+
+  console.log(`   Gas Estimate: ${estimatedGas.toString()} (Limit: ${gasLimit.toString()})`);
+  console.log(`   Estimasi Biaya: ~${formatEther(totalGasCost)} BNB`);
+
+  if (sponsorBalance < totalGasCost) {
+    throw new Error(
+      `Saldo Sponsor tidak cukup! Butuh ~${formatEther(totalGasCost)} BNB, saldo saat ini ${formatEther(sponsorBalance)} BNB.`
+    );
+  }
+
+  // 7. Kirim Transaksi Atomic Rescue via BloXroute Protect RPC (Private Mempool)
+  console.log("\n🚀 Mengirimkan Atomic Rescue Transaction via Private RPC...");
+  let sponsorClient = createWalletClient({
+    account: sponsorAccount,
+    chain: bsc,
+    transport: http(privateRpcUrl),
   });
 
-  console.log(`   ✅ Transfer TX: ${transferHash}`);
-  console.log("   ⏳ Menunggu konfirmasi...");
+  let txHash;
+  try {
+    txHash = await sponsorClient.sendTransaction({
+      type: "eip7702",
+      authorizationList: [authorization],
+      to: compromisedAccount.address,
+      data: multicallData,
+      value: 0n,
+      gas: gasLimit,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+  } catch (err) {
+    console.warn(`⚠️ Private RPC gagal (${err.message}). Mencoba via Public BSC RPC...`);
+    sponsorClient = createWalletClient({
+      account: sponsorAccount,
+      chain: bsc,
+      transport: http(activeReadRpc),
+    });
+    txHash = await sponsorClient.sendTransaction({
+      type: "eip7702",
+      authorizationList: [authorization],
+      to: compromisedAccount.address,
+      data: multicallData,
+      value: 0n,
+      gas: gasLimit,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+  }
 
-  const transferReceipt = await publicClient.waitForTransactionReceipt({ hash: transferHash });
-  console.log(`   ✅ Confirmed di block ${transferReceipt.blockNumber} (Status: ${transferReceipt.status})!`);
+  console.log(`   ✅ Transaction Broadcasted!`);
+  console.log(`   Hash: ${txHash}`);
+  console.log("   ⏳ Menunggu konfirmasi di block BSC...");
 
-  console.log("\n🎉 ========================================================");
-  console.log(`   RESCUE BERHASIL 100%!`);
-  console.log(`   ${formattedBalance} ${symbol} berhasil dikirim ke:`);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  if (receipt.status !== "success") {
+    throw new Error(`Transaksi revert di block ${receipt.blockNumber}!`);
+  }
+
+  console.log(`   ✅ CONFIRMED di Block ${receipt.blockNumber} (Gas Used: ${receipt.gasUsed})!\n`);
+
+  // 8. Verifikasi saldo akhir di wallet tujuan
+  const destFinalBalance = await publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [destAddress],
+  });
+
+  console.log("🎉 ========================================================");
+  console.log("   RESCUE 100% BERHASIL!");
+  console.log(`   ${formattedBalance} ${symbol} berhasil diamankan ke:`);
   console.log(`   ${destAddress}`);
-  console.log("   ========================================================\n");
+  console.log(`   Saldo Destination Saat Ini: ${formatUnits(destFinalBalance, decimals)} ${symbol}`);
+  console.log(`   BscScan Explorer: https://bscscan.com/tx/${txHash}`);
+  console.log("========================================================\n");
 }
 
-main().catch((e) => {
-  console.error("\n💥 ERROR:", e.message || e);
+main().catch((err) => {
+  console.error("\n💥 FATAL ERROR:", err.message || err);
   process.exit(1);
 });

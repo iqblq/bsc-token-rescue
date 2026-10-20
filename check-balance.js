@@ -2,7 +2,7 @@
  * =============================================
  * BSC TOKEN RESCUE - CHECK BALANCE
  * =============================================
- * Script ini untuk cek balance token AEM & BNB
+ * Script ini untuk cek balance token & BNB
  * di wallet compromised sebelum melakukan rescue.
  * =============================================
  */
@@ -48,7 +48,7 @@ async function checkBalance() {
   console.log(`💰 BNB Balance: ${ethers.formatEther(bnbBalance)} BNB`);
 
   // Check token balance
-  const tokenAddress = process.env.TOKEN_CONTRACT || "0xa0a906bc6a38c8249e0d89f57f72ad12606b952e";
+  const tokenAddress = process.env.TOKEN_CONTRACT || "0x8aab31fbc69c92fa53f600910cf0f215531f8239";
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
 
   try {
@@ -60,14 +60,32 @@ async function checkBalance() {
     console.log(`\n🪙 Token: ${name} (${symbol})`);
     console.log(`📋 Contract: ${tokenAddress}`);
     console.log(`🔢 Decimals: ${decimals}`);
-    console.log(`💎 Balance: ${ethers.formatUnits(balance, decimals)} ${symbol}`);
+    console.log(`💎 Compromised Balance: ${ethers.formatUnits(balance, decimals)} ${symbol}`);
 
-    if (balance === 0n) {
-      console.log("\n⚠️  Token balance = 0. Gak ada yang bisa di-rescue.");
-      process.exit(0);
+    // Check Destination Wallet
+    const destinationAddress = process.env.DESTINATION_ADDRESS ? process.env.DESTINATION_ADDRESS.trim() : "";
+    if (destinationAddress && destinationAddress !== "your_safe_destination_address_here") {
+      const destBnb = await provider.getBalance(destinationAddress);
+      const destTokenBal = await tokenContract.balanceOf(destinationAddress);
+      console.log(`\n🎯 Safe Destination Wallet: ${destinationAddress}`);
+      console.log(`   💰 BNB Balance: ${ethers.formatEther(destBnb)} BNB`);
+      console.log(`   💎 Token Balance: ${ethers.formatUnits(destTokenBal, decimals)} ${symbol}`);
     }
 
-    // Estimate gas for transfer (fallback to 65000 if estimateGas fails due to 0 BNB balance)
+    // Check Funding Wallet
+    if (fundingKey && fundingKey !== "your_safe_wallet_private_key_here") {
+      const fundingWallet = new ethers.Wallet(fundingKey);
+      const fundingBalance = await provider.getBalance(fundingWallet.address);
+      console.log(`\n🏦 Funding / Sponsor Wallet: ${fundingWallet.address}`);
+      console.log(`   💰 BNB Balance: ${ethers.formatEther(fundingBalance)} BNB`);
+    }
+
+    if (balance === 0n) {
+      console.log("\nℹ️  Token di wallet compromised sudah 0. (Sudah aman atau tidak ada token tersisa).");
+      return;
+    }
+
+    // Estimate gas for transfer
     let gasEstimate = 65000n;
     try {
       gasEstimate = await tokenContract.transfer.estimateGas(
@@ -76,7 +94,6 @@ async function checkBalance() {
         { from: compromisedAddress }
       );
     } catch (e) {
-      // Normal on some RPCs when sender has 0 BNB
       gasEstimate = 65000n;
     }
 
@@ -88,22 +105,6 @@ async function checkBalance() {
     console.log(`   Gas units: ${gasEstimate.toString()}`);
     console.log(`   Gas price: ${ethers.formatUnits(gasPrice, "gwei")} Gwei`);
     console.log(`   Total cost: ${ethers.formatEther(gasCost)} BNB`);
-
-    // Check funding wallet
-    if (fundingKey && fundingKey !== "your_safe_wallet_private_key_here") {
-      const fundingWallet = new ethers.Wallet(fundingKey);
-      const fundingBalance = await provider.getBalance(fundingWallet.address);
-      console.log(`\n🏦 Funding Wallet: ${fundingWallet.address}`);
-      console.log(`💰 Funding BNB Balance: ${ethers.formatEther(fundingBalance)} BNB`);
-
-      const totalNeeded = gasCost * 2n; // 2x safety margin
-      if (fundingBalance < totalNeeded) {
-        console.log(`\n❌ Funding wallet butuh minimal ${ethers.formatEther(totalNeeded)} BNB`);
-        console.log(`   (2x gas cost buat safety margin)`);
-      } else {
-        console.log(`\n✅ Funding wallet cukup BNB! Siap rescue.`);
-      }
-    }
 
   } catch (error) {
     console.error(`\n❌ Error checking token: ${error.message}`);

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSC Token Rescue 🛡️ | Web3 Anti-Sweeper Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="glow-bg glow-1"></div>
+  <div class="glow-bg glow-2"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-badge">
+        <span class="brand-icon">🛡️</span>
+        <div class="brand-text">
+          <h1>BSC TOKEN RESCUE <span class="badge-pro">PRO v1.0</span></h1>
+          <p class="brand-tagline">Anti-Sweeper Bot & EIP-7702 Asset Recovery Dashboard</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- Network / RPC Pill -->
+      <div class="rpc-status-card" id="rpcStatusCard">
+        <span class="status-dot dot-online" id="rpcStatusDot"></span>
+        <div class="rpc-info">
+          <span class="rpc-label">BSC Chain (56)</span>
+          <span class="rpc-speed" id="rpcSpeedText">Checking RPC...</span>
+        </div>
+      </div>
+
+      <button id="btnRefreshAll" class="btn-icon-refresh" title="Refresh Balances & Status">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+      </button>
+
+      <button id="btnConfigModal" class="btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>Environment Config</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-layout">
+    <!-- Left Column: Wallets & Inspection -->
+    <div class="col-left">
+      <!-- Target Token Card -->
+      <section class="glass-card token-card">
+        <div class="card-header">
+          <div class="header-title">
+            <span class="icon">🪙</span>
+            <h2>Target Token</h2>
+          </div>
+          <span class="token-badge-symbol" id="tokenSymbolBadge">WL</span>
+        </div>
+
+        <div class="form-group contract-group">
+          <label for="tokenContractInput">BEP-20 Contract Address</label>
+          <div class="input-with-button">
+            <input type="text" id="tokenContractInput" placeholder="0x..." value="0x8aab31fbc69c92fa53f600910cf0f215531f8239" />
+            <button id="btnCheckToken" class="btn-small">Check</button>
+          </div>
+        </div>
+
+        <div class="token-stats-grid">
+          <div class="stat-box">
+            <span class="stat-label">Token Name</span>
+            <span class="stat-value" id="tokenNameText">-</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Decimals</span>
+            <span class="stat-value" id="tokenDecimalsText">-</span>
+          </div>
+          <div class="stat-box full-width highlight-gold">
+            <span class="stat-label">Compromised Balance (Ready to Rescue)</span>
+            <span class="stat-value big-num" id="compTokenBalText">0.00</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Wallets Status Grid -->
+      <div class="wallets-grid">
+        <!-- Compromised Wallet -->
+        <section class="glass-card wallet-card danger-card">
+          <div class="card-header">
+            <div class="header-title">
+              <span class="icon">💀</span>
+              <h3>Compromised Wallet</h3>
+            </div>
+            <span class="status-pill status-danger" id="eip7702Badge">Normal EOA</span>
+          </div>
+
+          <div class="wallet-address-box">
+            <span class="address-text" id="compAddressText">Not Configured</span>
+            <button class="btn-copy" data-target="compAddressText" title="Copy Address">📋</button>
+          </div>
+
+          <div class="balance-row">
+            <div class="bal-item">
+              <span class="bal-label">BNB Balance</span>
+              <span class="bal-val" id="compBnbBalText">0.00 BNB</span>
+            </div>
+            <div class="bal-item">
+              <span class="bal-label">Current Nonce</span>
+              <span class="bal-val" id="compNonceText">#0</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Funding / Sponsor Wallet -->
+        <section class="glass-card wallet-card safe-card">
+          <div class="card-header">
+            <div class="header-title">
+              <span class="icon">🏦</span>
+              <h3>Funding / Sponsor</h3>
+            </div>
+            <span class="status-pill status-success">Safe Sponsor</span>
+          </div>
+
+          <div class="wallet-address-box">
+            <span class="address-text" id="fundAddressText">Not Configured</span>
+            <button class="btn-copy" data-target="fundAddressText" title="Copy Address">📋</button>
+          </div>
+
+          <div class="balance-row">
+            <div class="bal-item">
+              <span class="bal-label">BNB Balance</span>
+              <span class="bal-val" id="fundBnbBalText">0.00 BNB</span>
+            </div>
+            <div class="bal-item">
+              <span class="bal-label">Est. Gas Needed</span>
+              <span class="bal-val highlight-green" id="gasNeededText">~0.00045 BNB</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Safe Destination Card -->
+      <section class="glass-card destination-card">
+        <div class="card-header">
+          <div class="header-title">
+            <span class="icon">🎯</span>
+            <h3>Safe Destination Address</h3>
+          </div>
+          <span class="status-pill status-info">Destination</span>
+        </div>
+
+        <div class="form-group">
+          <input type="text" id="destAddressInput" placeholder="0x... (Wallet aman penerima token)" />
+        </div>
+        <div class="dest-balance-row">
+          <span>Safe Wallet Token Balance:</span>
+          <strong id="destTokenBalText">0.00</strong>
+        </div>
+      </section>
+
+      <!-- RPC Nodes Status Grid -->
+      <section class="glass-card rpc-list-card">
+        <div class="card-header">
+          <div class="header-title">
+            <span class="icon">⚡</span>
+            <h3>RPC Node Latency Status</h3>
+          </div>
+          <button id="btnPingRpcs" class="btn-link">Ping All</button>
+        </div>
+        <div class="rpc-nodes-list" id="rpcNodesList">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Rescue Strategies & Live Terminal -->
+    <div class="col-right">
+      <!-- Strategy Selector Card -->
+      <section class="glass-card strategy-card">
+        <div class="card-header">
+          <div class="header-title">
+            <span class="icon">🚀</span>
+            <h2>Select Rescue Strategy</h2>
+          </div>
+          <div class="gas-multiplier-wrapper">
+            <label for="gasMultiplier">Gas Multiplier:</label>
+            <select id="gasMultiplier" class="select-small">
+              <option value="1">1.0x (Standard)</option>
+              <option value="2" selected>2.0x (Rapid - Recommended)</option>
+              <option value="3">3.0x (Aggressive Sweeper Beat)</option>
+              <option value="5">5.0x (Ultra Emergency)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Strategy Tabs / Options -->
+        <div class="strategy-selector">
+          <div class="strategy-item active" data-strategy="rapid-fire">
+            <div class="strategy-radio"></div>
+            <div class="strategy-details">
+              <div class="strategy-title">
+                <span class="strat-icon">⚡</span>
+                <h4>bloXroute Protect RPC (Private Mempool)</h4>
+                <span class="tag-recommended">RECOMMENDED</span>
+              </div>
+              <p>Mengirim gas BNB & transfer token sekaligus via private mempool bloXroute. Sweeper bot publik tidak bisa melihat atau menyalip transaksi.</p>
+            </div>
+          </div>
+
+          <div class="strategy-item" data-strategy="eip7702">
+            <div class="strategy-radio"></div>
+            <div class="strategy-details">
+              <div class="strategy-title">
+                <span class="strat-icon">🛡️</span>
+                <h4>EIP-7702 Revoke Delegation & Sponsor Rescue</h4>
+              </div>
+              <p>Mencabut delegasi contract hacker (0xef0100) via Type-4 transaction yang disponsori safe wallet, lalu mengamankan token.</p>
+            </div>
+          </div>
+
+          <div class="strategy-item" data-strategy="direct-multirpc">
+            <div class="strategy-radio"></div>
+            <div class="strategy-details">
+              <div class="strategy-title">
+                <span class="strat-icon">📡</span>
+                <h4>Multi-RPC Parallel Direct Broadcast</h4>
+              </div>
+              <p>Jika compromised wallet sudah memiliki sedikit BNB, transfer token langsung di-broadcast ke 4+ RPC BSC tercepat secara paralel.</p>
+            </div>
+          </div>
+
+          <div class="strategy-item" data-strategy="sweep-bnb">
+            <div class="strategy-radio"></div>
+            <div class="strategy-details">
+              <div class="strategy-title">
+                <span class="strat-icon">🧹</span>
+                <h4>Emergency BNB Drain / Sweep</h4>
+              </div>
+              <p>Sapu bersih semua sisa saldo native BNB dari compromised wallet langsung ke safe destination wallet.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="action-footer">
+          <div class="action-notice">
+            <span class="notice-icon">⚠️</span>
+            <span>Pastikan Safe Destination Address sudah diverifikasi 100% benar sebelum memulai.</span>
+          </div>
+          <button id="btnExecuteRescue" class="btn-execute">
+            <span class="btn-execute-glow"></span>
+            <span class="btn-execute-icon">⚡</span>
+            <span class="btn-execute-text">EXECUTE RESCUE NOW</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Live Terminal Console -->
+      <section class="glass-card terminal-card">
+        <div class="card-header terminal-header">
+          <div class="terminal-dots">
+            <span class="dot-red"></span>
+            <span class="dot-yellow"></span>
+            <span class="dot-green"></span>
+            <span class="terminal-title">LIVE RESCUE CONSOLE</span>
+          </div>
+          <div class="terminal-actions">
+            <button id="btnClearTerminal" class="btn-term-action">Clear</button>
+          </div>
+        </div>
+
+        <!-- Step Progress Bar -->
+        <div class="step-progress-container" id="stepProgressContainer" style="display: none;">
+          <div class="step-header">
+            <span class="step-title" id="stepTitleText">Initializing...</span>
+            <span class="step-count" id="stepCountText">Step 1 of 5</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progressBarFill" style="width: 20%;"></div>
+          </div>
+        </div>
+
+        <!-- Console Output Area -->
+        <div class="terminal-body" id="terminalBody">
+          <div class="log-line log-system">
+            <span class="log-time">[System]</span>
+            <span class="log-text">Dashboard siap. Silakan klik "Check" atau pilih strategi rescue di atas.</span>
+          </div>
+        </div>
+
+        <!-- Transaction Hash Pill List -->
+        <div class="tx-history-box" id="txHistoryBox" style="display: none;">
+          <span class="tx-box-title">Transactions Broadcasted:</span>
+          <div class="tx-links-list" id="txLinksList"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Environment Configuration Modal -->
+  <div class="modal-overlay" id="configModalOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="header-title">
+          <span class="icon">⚙️</span>
+          <h3>Environment & Private Keys Config</h3>
+        </div>
+        <button class="modal-close" id="btnCloseConfigModal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-warning">
+          <span>🔒 Kunci privat disimpan secara lokal di file <code>.env</code> Anda dan tidak pernah dikirim keluar dari server lokal ini.</span>
+        </div>
+
+        <div class="form-group">
+          <label>Compromised Wallet Private Key</label>
+          <div class="input-with-eye">
+            <input type="password" id="cfgCompKey" placeholder="Private key wallet yang kena bot (64 hex characters)" />
+            <button type="button" class="btn-toggle-eye" data-target="cfgCompKey">👁️</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Funding / Safe Sponsor Private Key</label>
+          <div class="input-with-eye">
+            <input type="password" id="cfgFundKey" placeholder="Private key wallet aman penyedia gas fee" />
+            <button type="button" class="btn-toggle-eye" data-target="cfgFundKey">👁️</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Default Destination Address</label>
+          <input type="text" id="cfgDestAddress" placeholder="0x... (Safe Destination Address)" />
+        </div>
+
+        <div class="form-group">
+          <label>Default Token Contract</label>
+          <input type="text" id="cfgTokenContract" placeholder="0x... (BEP-20 Contract)" />
+        </div>
+
+        <div class="form-group">
+          <label>BSC Public RPC URL</label>
+          <input type="text" id="cfgBscRpc" placeholder="https://bsc-rpc.publicnode.com" />
+        </div>
+
+        <div class="form-group">
+          <label>bloXroute Protect RPC URL</label>
+          <input type="text" id="cfgBloxRpc" placeholder="https://bsc.rpc.blxrbdn.com" />
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnCancelConfig" class="btn-secondary">Cancel</button>
+        <button id="btnSaveConfig" class="btn-primary">Save to .env & Reload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Modal Alert -->
+  <div class="modal-overlay" id="successModalOverlay">
+    <div class="modal-card success-card">
+      <div class="success-icon-badge">🎉</div>
+      <h2>RESCUE 100% SUKSES!</h2>
+      <p class="success-subtitle">Token berhasil diselamatkan dari sweeper bot!</p>
+      
+      <div class="success-stats-box">
+        <div class="s-stat">
+          <span>Rescued Asset:</span>
+          <strong id="successRescuedAmount">-</strong>
+        </div>
+        <div class="s-stat">
+          <span>Delivered To:</span>
+          <code id="successDestination">-</code>
+        </div>
+      </div>
+
+      <div class="success-actions">
+        <a id="btnSuccessBscScan" href="#" target="_blank" class="btn-primary">View on BSCScan ↗</a>
+        <button id="btnCloseSuccessModal" class="btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 /**
  * =====================================================================
- * MULTI-RPC RESCUE TRANSFER FOR AEM
+ * MULTI-RPC RESCUE TRANSFER
  * =====================================================================
  */
 
@@ -36,7 +36,7 @@ async function getWorkingProvider() {
 
 async function main() {
   console.log("╔════════════════════════════════════════════════╗");
-  console.log("║     🚀 TRANSFERRING RESCUED AEM TO SAFE WALLET ║");
+  console.log("║     🚀 TRANSFERRING TOKEN TO SAFE WALLET ║");
   console.log("╚════════════════════════════════════════════════╝\n");
 
   const provider = await getWorkingProvider();
@@ -44,7 +44,7 @@ async function main() {
   const compKey = process.env.COMPROMISED_PRIVATE_KEY;
   const fundKey = process.env.FUNDING_PRIVATE_KEY;
   const destAddress = process.env.DESTINATION_ADDRESS;
-  const tokenAddress = process.env.TOKEN_CONTRACT || "0xa0a906bc6a38c8249e0d89f57f72ad12606b952e";
+  const tokenAddress = process.env.TOKEN_CONTRACT || "0x8aab31fbc69c92fa53f600910cf0f215531f8239";
 
   const compromisedWallet = new ethers.Wallet(compKey, provider);
   const fundingWallet = new ethers.Wallet(fundKey, provider);
